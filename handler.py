@@ -55,7 +55,7 @@ def action_train(job_input: dict) -> dict:
     """
     Full training pipeline:
     1. Download dataset ZIP from Google Drive URL
-    2. Fine-tune R(2+1)D-18 for 16-label multi-label classification
+    2. Fine-tune R(2+1)D-18 for 18-label multi-label classification
     3. Export best checkpoint as ONNX
     4. Upload result and return download URL
     """
@@ -69,7 +69,7 @@ def action_train(job_input: dict) -> dict:
     batch_size = config.get("batch_size", 8)
     lr = config.get("learning_rate", 3e-4)
     patience = config.get("early_stopping_patience", 7)
-    num_labels = config.get("num_labels", 16)
+    num_labels = config.get("num_labels", 18)
     model_version = config.get("model_version", "v1")
 
     if not dataset_url:
@@ -85,7 +85,6 @@ def action_train(job_input: dict) -> dict:
     print(f"[KayTrain] Downloading dataset from S3 Network Volume ...")
 
     # Due to RunPod's Cloudflare Proxy blocking Presigned URLs, we download using passed AWS credentials
-    dataset_url = job_input.get("dataset_url")
     s3_cfg = job_input.get("s3_cfg", {})
     if s3_cfg:
         import boto3
@@ -272,13 +271,32 @@ def action_train(job_input: dict) -> dict:
     size_mb = os.path.getsize(onnx_path) / 1024 ** 2
     print(f"[KayTrain] ONNX exported: {onnx_path} ({size_mb:.1f} MB)")
 
+    # ── 6. Upload ONNX back to S3 ────────────────────────
+    download_url = None
+    if s3_cfg:
+        print("[KayTrain] Uploading ONNX to S3...")
+        import boto3
+        s3_upload = boto3.client(
+            's3',
+            endpoint_url=s3_cfg["endpoint"],
+            aws_access_key_id=s3_cfg["access_key"],
+            aws_secret_access_key=s3_cfg["secret_key"]
+        )
+        onnx_key = f"models/kayai_motion_{model_version}.onnx"
+        s3_upload.upload_file(onnx_path, s3_cfg["bucket"], onnx_key)
+        print(f"[KayTrain] ONNX uploaded to s3://{s3_cfg['bucket']}/{onnx_key}")
+        download_url = f"s3://{s3_cfg['bucket']}/{onnx_key}"
+    else:
+        print("[KayTrain] WARNING: No s3_cfg provided, cannot upload ONNX.")
+
     return {
         "status": "completed",
         "model_version": model_version,
         "best_mAP": round(best_map * 100, 2),
         "epochs_trained": len(history),
         "model_size_mb": round(size_mb, 1),
-        "onnx_path": onnx_path,
+        "download_url": download_url,
+        "onnx_key": onnx_key if s3_cfg else None,
         "history": history[-5:],  # Last 5 epochs
     }
 
