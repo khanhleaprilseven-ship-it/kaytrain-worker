@@ -87,12 +87,15 @@ def action_train(job_input: dict) -> dict:
     # Due to RunPod's Cloudflare Proxy blocking Presigned URLs, we download using passed AWS credentials
     s3_cfg = job_input.get("s3_cfg", {})
     if s3_cfg:
-        import boto3
+        import boto3, re
+        region_match = re.search(r's3api-(.*?)\.runpod\.io', s3_cfg["endpoint"])
+        region = region_match.group(1) if region_match else "us-east-1"
         s3 = boto3.client(
             's3',
             endpoint_url=s3_cfg["endpoint"],
             aws_access_key_id=s3_cfg["access_key"],
-            aws_secret_access_key=s3_cfg["secret_key"]
+            aws_secret_access_key=s3_cfg["secret_key"],
+            region_name=region
         )
         s3.download_file(s3_cfg["bucket"], "dataset.zip", zip_path)
     else:
@@ -275,12 +278,15 @@ def action_train(job_input: dict) -> dict:
     download_url = None
     if s3_cfg:
         print("[KayTrain] Uploading ONNX to S3...")
-        import boto3
+        import boto3, re
+        region_match = re.search(r's3api-(.*?)\.runpod\.io', s3_cfg["endpoint"])
+        region = region_match.group(1) if region_match else "us-east-1"
         s3_upload = boto3.client(
             's3',
             endpoint_url=s3_cfg["endpoint"],
             aws_access_key_id=s3_cfg["access_key"],
-            aws_secret_access_key=s3_cfg["secret_key"]
+            aws_secret_access_key=s3_cfg["secret_key"],
+            region_name=region
         )
         onnx_key = f"models/kayai_motion_{model_version}.onnx"
         s3_upload.upload_file(onnx_path, s3_cfg["bucket"], onnx_key)
