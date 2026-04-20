@@ -135,9 +135,9 @@ def action_train(job_input: dict) -> dict:
         def __getitem__(self, idx):
             path = self.files[idx]
             key = os.path.basename(path)
-            flow = np.load(path).astype(np.float32)  # (16, H, W, 2)
-            # Normalize and reshape to (3, 16, 112, 112) for R(2+1)D
-            # Use dx, dy as 2 channels, magnitude as 3rd channel
+            flow = np.load(path).astype(np.float32)  # (T, H, W, 2)
+            
+            # Normalize and reshape to (3, T, 112, 112) for R(2+1)D
             flow_resized = []
             import cv2
             for t in range(flow.shape[0]):
@@ -146,7 +146,7 @@ def action_train(job_input: dict) -> dict:
                 dy = cv2.resize(f[:, :, 1], (112, 112))
                 mag = np.sqrt(dx**2 + dy**2)
                 flow_resized.append(np.stack([dx, dy, mag], axis=0))  # (3, 112, 112)
-            tensor = np.stack(flow_resized, axis=1)  # (3, 16, 112, 112)
+            tensor = np.stack(flow_resized, axis=1)  # (3, T, 112, 112)
             # Normalize to [-1, 1]
             tensor = (tensor - tensor.mean()) / (tensor.std() + 1e-8)
             label = np.array(self.labels[key], dtype=np.float32)
