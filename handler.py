@@ -82,9 +82,25 @@ def action_train(job_input: dict) -> dict:
     # ── 1. Download dataset ──────────────────────────────
     os.makedirs("/workspace/data", exist_ok=True)
     zip_path = "/workspace/data/dataset.zip"
-    print(f"[KayTrain] Downloading dataset from {dataset_url} ...")
+    print(f"[KayTrain] Downloading dataset from S3 Network Volume ...")
 
-    urllib.request.urlretrieve(dataset_url, zip_path)
+    # Due to RunPod's Cloudflare Proxy blocking Presigned URLs, we download using passed AWS credentials
+    dataset_url = job_input.get("dataset_url")
+    s3_cfg = job_input.get("s3_cfg", {})
+    if s3_cfg:
+        import boto3
+        s3 = boto3.client(
+            's3',
+            endpoint_url=s3_cfg["endpoint"],
+            aws_access_key_id=s3_cfg["access_key"],
+            aws_secret_access_key=s3_cfg["secret_key"]
+        )
+        s3.download_file(s3_cfg["bucket"], "dataset.zip", zip_path)
+    else:
+        req = urllib.request.Request(dataset_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+            
     print(f"[KayTrain] Download complete: {os.path.getsize(zip_path) / 1024**2:.1f} MB")
 
     with zipfile.ZipFile(zip_path, "r") as zf:
