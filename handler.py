@@ -142,8 +142,26 @@ def action_train(job_input: dict) -> dict:
     n_train = len(dataset) - n_val
     train_ds, val_ds = torch.utils.data.random_split(dataset, [n_train, n_val])
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2)
+    def variable_length_collate(batch):
+        # batch is a list of tuples: (tensor_3_T_H_W, label)
+        from torch.nn.utils.rnn import pad_sequence
+        
+        tensors = [item[0] for item in batch]
+        labels = [item[1] for item in batch]
+        
+        # tensor shape is (3, T, 112, 112)
+        # pad_sequence expects (T, *). So we permute (3, T, 112, 112) -> (T, 3, 112, 112)
+        permuted = [t.permute(1, 0, 2, 3) for t in tensors]
+        padded = pad_sequence(permuted, batch_first=True, padding_value=0.0)
+        # padded shape is (Batch, Max_T, 3, 112, 112)
+        
+        # permute back to (Batch, 3, Max_T, 112, 112)
+        final_tensors = padded.permute(0, 2, 1, 3, 4)
+        final_labels = torch.stack(labels)
+        return final_tensors, final_labels
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2, collate_fn=variable_length_collate)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2, collate_fn=variable_length_collate)
 
     # ── 3. Build Model ───────────────────────────────────
     print("[KayTrain] Loading R(2+1)D-18 pretrained...")
